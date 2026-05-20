@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0">
+<title>MoonRay Host Test v4.0</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,sans-serif;background:#0a0a0f;color:#e0e0e0;padding:12px;font-size:13px}
+h1{font-size:18px;text-align:center;margin-bottom:4px;background:linear-gradient(135deg,#6366f1,#a855f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.sub{text-align:center;font-size:10px;color:#888;margin-bottom:12px}
+.section{background:#111118;border:1px solid #222;border-radius:10px;padding:12px;margin-bottom:10px}
+.section h2{font-size:14px;margin-bottom:8px;color:#a78bfa}
+.btn{display:block;width:100%;padding:12px;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:6px;color:#fff}
+.btn-primary{background:linear-gradient(135deg,#6366f1,#8b5cf6)}
+.btn-warn{background:linear-gradient(135deg,#f59e0b,#ef4444)}
+.btn-green{background:linear-gradient(135deg,#10b981,#059669)}
+.btn:disabled{opacity:0.4}
+input[type=file]{display:block;width:100%;padding:8px;background:#1a1a24;border:1px solid #333;border-radius:6px;color:#ccc;font-size:12px;margin-bottom:6px}
+input[type=text]{display:block;width:100%;padding:8px;background:#1a1a24;border:1px solid #333;border-radius:6px;color:#ccc;font-size:12px;margin-bottom:6px}
+.log{background:#050508;border:1px solid #222;border-radius:6px;padding:8px;font-family:monospace;font-size:10px;max-height:300px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;margin-top:6px;line-height:1.5}
+.ok{color:#34d399}.fail{color:#f87171}.warn{color:#fbbf24}.info{color:#60a5fa}
+.report-box{background:#0d0d14;border:2px solid #6366f1;border-radius:8px;padding:10px;margin-top:10px;font-family:monospace;font-size:10px;white-space:pre-wrap;word-break:break-all;max-height:400px;overflow-y:auto}
+#fileInfo{font-size:10px;color:#888;margin-bottom:6px}
+</style>
+</head>
+<body>
+<h1>🧪 MoonRay Host Test</h1>
+<div class="sub">v4.0 Diagnostic — Jalankan di APK untuk hasil akurat</div>
+
+<!-- SECTION 1: DEVICE INFO -->
+<div class="section">
+<h2>📱 1. Device & Bridge Info</h2>
+<div class="log" id="deviceLog">Tekan tombol untuk scan...</div>
+<button class="btn btn-primary" onclick="scanDevice()">🔍 Scan Device</button>
+</div>
+
+<!-- SECTION 2: FILE SELECT -->
+<div class="section">
+<h2>📁 2. Pilih File Test</h2>
+<label style="font-size:11px;color:#aaa">Gambar (JPG/PNG):</label>
+<input type="file" id="imgFile" accept="image/*" onchange="showFileInfo()">
+<label style="font-size:11px;color:#aaa">Video (MP4, 15-29 detik):</label>
+<input type="file" id="vidFile" accept="video/*" onchange="showFileInfo()">
+<div id="fileInfo"></div>
+</div>
+
+<!-- SECTION 3: UPLOAD TEST -->
+<div class="section">
+<h2>📤 3. Upload Host Test</h2>
+<div class="log" id="uploadLog">Pilih file dulu, lalu tekan test...</div>
+<button class="btn btn-primary" onclick="runUploadTest()">🚀 Test Upload Semua Host</button>
+</div>
+
+<!-- SECTION 4: FREEPIK TEST -->
+<div class="section">
+<h2>🌐 4. Freepik API Test</h2>
+<label style="font-size:11px;color:#aaa">API Key:</label>
+<input type="text" id="apiKeyInput" placeholder="fpk-xxxxx">
+<div class="log" id="fpkLog">Masukkan API key, lalu tekan test...</div>
+<button class="btn btn-warn" onclick="testFreepik()">⚡ Test Freepik (Tanpa VPN)</button>
+<button class="btn btn-green" onclick="testFreepik()" style="margin-top:4px">🛡️ Test Freepik (Dengan VPN — nyalakan VPN dulu!)</button>
+</div>
+
+<!-- SECTION 5: FULL REPORT -->
+<div class="section">
+<h2>📋 5. Laporan Lengkap</h2>
+<button class="btn btn-primary" onclick="generateReport()">📋 Generate Laporan</button>
+<button class="btn btn-green" onclick="copyReport()" style="margin-top:4px">📑 Copy Laporan</button>
+<div class="report-box" id="reportBox">Jalankan semua test dulu...</div>
+</div>
+
+<script>
+// ==================== GLOBALS ====================
+const RESULTS = {device:{},bridge:{},files:{},uploads:{image:{},video:{}},freepik:[],urlVerify:{}};
+const HOSTS = [
+  {name:'litterbox',url:'https://litterbox.catbox.moe/resources/internals/api.php',field:'fileToUpload',extra:'reqtype=fileupload&time=24h',parse:'text',check:u=>u&&u.startsWith('https://')},
+  {name:'catbox',url:'https://catbox.moe/user/api.php',field:'fileToUpload',extra:'reqtype=fileupload',parse:'text',check:u=>u&&u.startsWith('https://')},
+  {name:'uguu',url:'https://uguu.se/upload',field:'files[]',extra:'',parse:'json',check:(u,d)=>d&&d.success&&d.files&&d.files[0]&&d.files[0].url,getUrl:(d)=>d.files[0].url},
+  {name:'imgur',url:'https://api.imgur.com/3/image',field:'image',extra:'',parse:'json',check:(u,d)=>d&&d.success&&d.data&&d.data.link,getUrl:(d)=>d.data.link,headers:{'Authorization':'Client-ID 546c25a59c58ad7'},imageOnly:true},
+  {name:'tmpfiles',url:'https://tmpfiles.org/api/v1/upload',field:'file',extra:'',parse:'json',check:(u,d)=>d&&d.status==='success'&&d.data&&d.data.url,getUrl:(d)=>d.data.url.replace('tmpfiles.org/','tmpfiles.org/dl/')},
+  {name:'0x0st',url:'https://0x0.st',field:'file',extra:'',parse:'text',check:u=>u&&u.startsWith('https://')},
+  {name:'freeimage',url:'https://freeimage.host/api/1/upload?key=6d207e02198a847aa98d0a2a901485a5',field:'source',extra:'type=file&action=upload',parse:'json',check:(u,d)=>d&&d.image&&d.image.url,getUrl:(d)=>d.image.url,imageOnly:true},
+  {name:'x0at',url:'https://x0.at/',field:'file',extra:'',parse:'text',check:u=>u&&u.trim().startsWith('https://')},
+  {name:'tempsh',url:'https://temp.sh/upload',field:'file',extra:'',parse:'text',check:u=>u&&u.trim().startsWith('https://')}
+];
+
+function log(id,msg,cls=''){document.getElementById(id).innerHTML+='<span class="'+cls+'">'+msg+'</span>\n';const el=document.getElementById(id);el.scrollTop=el.scrollHeight;}
+function clearLog(id){document.getElementById(id).innerHTML='';}
+function ts(){return new Date().toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}
+
+// ==================== 1. DEVICE SCAN ====================
+function scanDevice(){
+  clearLog('deviceLog');
+  const ua=navigator.userAgent||'unknown';
+  let model='unknown',android='unknown',webview='unknown';
+  try{const m=ua.match(/;\s*([^;)]+)\s*Build\//);if(m)model=m[1].trim();}catch(e){}
+  try{const m=ua.match(/Android\s+([\d.]+)/);if(m)android=m[1];}catch(e){}
+  try{const m=ua.match(/Chrome\/([\d.]+)/);if(m)webview=m[1];}catch(e){}
+  const isNative=typeof Capacitor!=='undefined'&&Capacitor.isNativePlatform&&Capacitor.isNativePlatform();
+  let fetchPatched='unknown';
+  try{const s=window.fetch.toString();fetchPatched=s.includes('native')?'NO (native)':s.includes('Capacitor')?'YES (capacitor)':'unknown';}catch(e){}
+  RESULTS.device={model,android,webview,isNative,fetchPatched,ram:navigator.deviceMemory||'unknown',timestamp:new Date().toISOString()};
+  log('deviceLog','📱 Model: '+model,'info');
+  log('deviceLog','🤖 Android: '+android,'info');
+  log('deviceLog','🌐 WebView: '+webview,'info');
+  log('deviceLog','⚡ Capacitor Native: '+isNative,'info');
+  log('deviceLog','🔧 Fetch Patched: '+fetchPatched,'info');
+  log('deviceLog','💾 RAM: '+(navigator.deviceMemory||'unknown')+' GB','info');
+  // Bridge check
+  const hasBridge=typeof MoonrayBridge!=='undefined';
+  log('deviceLog','');
+  log('deviceLog','🔌 MoonrayBridge: '+(hasBridge?'✅ TERSEDIA':'❌ TIDAK ADA'),hasBridge?'ok':'fail');
+  if(hasBridge){
+    const fns=['nativeUpload','nativeUploadFromCache','nativeUploadWithFields','hasFile','getFileSize','getFileChunk','readFileAsBase64','cleanupFile'];
+    const bridgeInfo={};
+    fns.forEach(fn=>{
+      const exists=typeof MoonrayBridge[fn]==='function';
+      bridgeInfo[fn]=exists;
+      log('deviceLog','  '+fn+': '+(exists?'✅':'❌'),exists?'ok':'fail');
+    });
+    RESULTS.bridge=bridgeInfo;
+  }else{
+    RESULTS.bridge={available:false};
+    log('deviceLog','⚠️ Test hanya bisa via fetch (bukan native bridge)','warn');
+  }
+}
+
+// ==================== 2. FILE INFO ====================
+function showFileInfo(){
+  const img=document.getElementById('imgFile').files[0];
+  const vid=document.getElementById('vidFile').files[0];
+  let info='';
+  if(img){info+='🖼️ Gambar: '+img.name+' ('+((img.size/1024/1024).toFixed(2))+'MB, '+img.type+')\n';RESULTS.files.image={name:img.name,size:img.size,type:img.type};}
+  if(vid){info+='🎥 Video: '+vid.name+' ('+((vid.size/1024/1024).toFixed(2))+'MB, '+vid.type+')\n';RESULTS.files.video={name:vid.name,size:vid.size,type:vid.type};}
+  document.getElementById('fileInfo').innerText=info;
+}
+
+// ==================== 3. UPLOAD TEST ====================
+async function safeFetch(url,opts={},timeoutMs=60000){
+  const c=new AbortController();const t=setTimeout(()=>c.abort(),timeoutMs);
+  try{const r=await fetch(url,{...opts,signal:c.signal});clearTimeout(t);return r;}
+  catch(err){clearTimeout(t);throw err.name==='AbortError'?new Error('Timeout ('+timeoutMs/1000+'s)'):err;}
+}
+
+async function uploadViaFetch(host,file){
+  const fd=new FormData();
+  if(host.extra){host.extra.split('&').forEach(p=>{const[k,v]=p.split('=');fd.append(k,v);});}
+  fd.append(host.field,file,file.name);
+  const opts={method:'POST',body:fd};
+  if(host.headers)opts.headers=host.headers;
+  const timeout=Math.min(120000,Math.max(30000,Math.round(file.size/1024*30)));
+  const r=await safeFetch(host.url,opts,timeout);
+  if(host.parse==='json'){const d=await r.json();const ok=host.check(null,d);return{ok,url:ok&&host.getUrl?host.getUrl(d):null,raw:JSON.stringify(d).substring(0,200),method:'fetch'};}
+  else{const txt=await r.text();const url=txt.trim();const ok=host.check(url);return{ok,url:ok?url:null,raw:txt.substring(0,200),method:'fetch'};}
+}
+
+async function uploadViaNative(host,file){
+  if(typeof MoonrayBridge==='undefined')return null;
+  // Try nativeUploadFromCache first
+  if(MoonrayBridge.nativeUploadFromCache&&MoonrayBridge.hasFile){
+    try{
+      if(MoonrayBridge.hasFile(file.name)){
+        const extra=host.extra||'';
+        const raw=MoonrayBridge.nativeUploadFromCache(file.name,host.url,host.field,file.name,extra);
+        if(raw){
+          if(host.parse==='json'){const d=JSON.parse(raw);const ok=host.check(null,d);if(ok)return{ok:true,url:host.getUrl?host.getUrl(d):null,raw:raw.substring(0,200),method:'nativeCache'};}
+          else{const ok=host.check(raw.trim());if(ok)return{ok:true,url:raw.trim(),raw:raw.substring(0,200),method:'nativeCache'};}
+        }
+      }
+    }catch(e){}
+  }
+  // Try nativeUploadWithFields
+  if(MoonrayBridge.nativeUploadWithFields&&host.extra){
+    try{
+      const b64=await fileToBase64(file);
+      const raw=MoonrayBridge.nativeUploadWithFields(b64,host.url,host.field,file.name,host.extra);
+      if(raw){
+        if(host.parse==='json'){const d=JSON.parse(raw);const ok=host.check(null,d);if(ok)return{ok:true,url:host.getUrl?host.getUrl(d):null,raw:raw.substring(0,200),method:'nativeFields'};}
+        else{const ok=host.check(raw.trim());if(ok)return{ok:true,url:raw.trim(),raw:raw.substring(0,200),method:'nativeFields'};}
+      }
+    }catch(e){}
+  }
+  // Try nativeUpload
+  if(MoonrayBridge.nativeUpload){
+    try{
+      const b64=await fileToBase64(file);
+      const raw=MoonrayBridge.nativeUpload(b64,host.url,host.field,file.name);
+      if(raw){
+        if(host.parse==='json'){const d=JSON.parse(raw);const ok=host.check(null,d);if(ok)return{ok:true,url:host.getUrl?host.getUrl(d):null,raw:raw.substring(0,200),method:'nativeUpload'};}
+        else{const ok=host.check(raw.trim());if(ok)return{ok:true,url:raw.trim(),raw:raw.substring(0,200),method:'nativeUpload'};}
+      }
+    }catch(e){}
+  }
+  return null;
+}
+
+function fileToBase64(file){return new Promise((ok,fail)=>{const r=new FileReader();r.onload=()=>ok(r.result.split(',')[1]);r.onerror=fail;r.readAsDataURL(file);});}
+
+async function testOneHost(host,file,fileType){
+  const start=Date.now();
+  const result={host:host.name,fileType,ok:false,url:null,method:'none',time:0,error:'',raw:''};
+  try{
+    // Try native first
+    const native=await uploadViaNative(host,file);
+    if(native&&native.ok){
+      result.ok=true;result.url=native.url;result.method=native.method;result.raw=native.raw;
+    }else{
+      // Fallback to fetch
+      const fetched=await uploadViaFetch(host,file);
+      result.ok=fetched.ok;result.url=fetched.url;result.method=fetched.method;result.raw=fetched.raw;
+    }
+  }catch(e){
+    result.error=e.message||String(e);
+    result.raw=result.error;
+  }
+  result.time=Date.now()-start;
+  return result;
+}
+
+async function runUploadTest(){
+  const imgFile=document.getElementById('imgFile').files[0];
+  const vidFile=document.getElementById('vidFile').files[0];
+  if(!imgFile){alert('Pilih gambar dulu!');return;}
+  clearLog('uploadLog');
+  log('uploadLog','🚀 Memulai upload test... '+ts(),'info');
+  log('uploadLog','');
+
+  // IMAGE TEST
+  log('uploadLog','═══ 🖼️ IMAGE UPLOAD TEST ═══','info');
+  for(const host of HOSTS){
+    log('uploadLog','⏳ '+host.name+'...','warn');
+    const r=await testOneHost(host,imgFile,'image');
+    RESULTS.uploads.image[host.name]=r;
+    if(r.ok){log('uploadLog','✅ '+host.name+' — '+r.time+'ms — '+r.method+' — '+r.url,'ok');}
+    else{log('uploadLog','❌ '+host.name+' — '+r.time+'ms — '+(r.error||r.raw),'fail');}
+    // URL verify
+    if(r.ok&&r.url){
+      try{await safeFetch(r.url,{method:'HEAD',mode:'no-cors'},5000);
+        RESULTS.urlVerify[host.name+'_img']='✅';log('uploadLog','   🔗 URL verify: ✅ accessible','ok');
+      }catch(e){RESULTS.urlVerify[host.name+'_img']='❌ '+e.message;log('uploadLog','   🔗 URL verify: ❌ '+e.message,'fail');}
+    }
+  }
+
+  // VIDEO TEST
+  if(vidFile){
+    log('uploadLog','');
+    log('uploadLog','═══ 🎥 VIDEO UPLOAD TEST ═══','info');
+    for(const host of HOSTS){
+      if(host.imageOnly){log('uploadLog','⏭️ '+host.name+' — skip (image only)','warn');RESULTS.uploads.video[host.name]={host:host.name,fileType:'video',ok:false,error:'image only',time:0};continue;}
+      log('uploadLog','⏳ '+host.name+'...','warn');
+      const r=await testOneHost(host,vidFile,'video');
+      RESULTS.uploads.video[host.name]=r;
+      if(r.ok){log('uploadLog','✅ '+host.name+' — '+r.time+'ms — '+r.method+' — '+r.url,'ok');}
+      else{log('uploadLog','❌ '+host.name+' — '+r.time+'ms — '+(r.error||r.raw),'fail');}
+      if(r.ok&&r.url){
+        try{await safeFetch(r.url,{method:'HEAD',mode:'no-cors'},5000);
+          RESULTS.urlVerify[host.name+'_vid']='✅';log('uploadLog','   🔗 URL verify: ✅ accessible','ok');
+        }catch(e){RESULTS.urlVerify[host.name+'_vid']='❌ '+e.message;log('uploadLog','   🔗 URL verify: ❌ '+e.message,'fail');}
+      }
+    }
+  }
+  log('uploadLog','');
+  log('uploadLog','✅ Upload test selesai — '+ts(),'ok');
+}
+
+// ==================== 4. FREEPIK TEST ====================
+async function testFreepik(){
+  const apiKey=document.getElementById('apiKeyInput').value.trim();
+  if(!apiKey){alert('Masukkan API key!');return;}
+  const logId='fpkLog';
+  log(logId,'');
+  log(logId,'⚡ Testing Freepik API... '+ts(),'info');
+  const isNative=typeof Capacitor!=='undefined'&&Capacitor.isNativePlatform&&Capacitor.isNativePlatform();
+  const entry={timestamp:ts(),method:'',status:0,latency:0,response:'',error:''};
+
+  // Test via Capacitor Native HTTP (same as v3.3)
+  if(isNative&&typeof Capacitor!=='undefined'&&Capacitor.Plugins&&Capacitor.Plugins.CapacitorHttp){
+    log(logId,'📡 Method: Capacitor Native HTTP (v3.3 style)','info');
+    entry.method='capacitor_native';
+    const start=Date.now();
+    try{
+      const res=await Capacitor.Plugins.CapacitorHttp.request({
+        url:'https://api.freepik.com/v1/ai/text-to-image/flux-2-klein',
+        method:'POST',
+        headers:{'Content-Type':'application/json','x-freepik-api-key':apiKey,'Accept':'application/json'},
+        data:{prompt:'test',aspect_ratio:'square_1_1'}
+      });
+      entry.latency=Date.now()-start;
+      entry.status=res.status;
+      entry.response=JSON.stringify(res.data).substring(0,300);
+      if(res.status>=200&&res.status<300){log(logId,'✅ HTTP '+res.status+' — '+entry.latency+'ms','ok');}
+      else if(res.status===403){
+        const txt=JSON.stringify(res.data).toLowerCase();
+        if(txt.includes('ip')&&txt.includes('block')){log(logId,'🚫 HTTP 403 — IP BLOCKED — '+entry.latency+'ms','fail');}
+        else if(txt.includes('disabled')){log(logId,'🚫 HTTP 403 — ACCOUNT DISABLED — '+entry.latency+'ms','fail');}
+        else{log(logId,'🚫 HTTP 403 — '+entry.response.substring(0,100),'fail');}
+      }else{log(logId,'⚠️ HTTP '+res.status+' — '+entry.latency+'ms','warn');}
+    }catch(e){entry.latency=Date.now()-start;entry.error=e.message;log(logId,'❌ Error: '+e.message,'fail');}
+  }else{
+    // Fallback: fetch (browser/non-native)
+    log(logId,'📡 Method: fetch (non-native)','info');
+    entry.method='fetch';
+    const start=Date.now();
+    try{
+      const res=await safeFetch('https://api.freepik.com/v1/ai/text-to-image/flux-2-klein',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','x-freepik-api-key':apiKey,'Accept':'application/json'},
+        body:JSON.stringify({prompt:'test',aspect_ratio:'square_1_1'})
+      },15000);
+      entry.latency=Date.now()-start;
+      entry.status=res.status;
+      const txt=await res.text();
+      entry.response=txt.substring(0,300);
+      if(res.status>=200&&res.status<300){log(logId,'✅ HTTP '+res.status+' — '+entry.latency+'ms','ok');}
+      else if(res.status===403){
+        const lower=txt.toLowerCase();
+        if(lower.includes('ip')&&lower.includes('block')){log(logId,'🚫 HTTP 403 — IP BLOCKED — '+entry.latency+'ms','fail');}
+        else if(lower.includes('disabled')){log(logId,'🚫 HTTP 403 — ACCOUNT DISABLED — '+entry.latency+'ms','fail');}
+        else{log(logId,'🚫 HTTP 403 — '+txt.substring(0,100),'fail');}
+      }else{log(logId,'⚠️ HTTP '+res.status+' — '+entry.latency+'ms','warn');}
+    }catch(e){entry.latency=Date.now()-start;entry.error=e.message;log(logId,'❌ Error: '+e.message,'fail');}
+  }
+  log(logId,'📄 Response: '+entry.response.substring(0,150),'info');
+  RESULTS.freepik.push(entry);
+}
+
+// ==================== 5. REPORT ====================
+function generateReport(){
+  let r='';
+  r+='╔══════════════════════════════════════╗\n';
+  r+='║  MOONRAY HOST TEST REPORT v4.0      ║\n';
+  r+='║  '+new Date().toISOString()+'  ║\n';
+  r+='╚══════════════════════════════════════╝\n\n';
+  r+='[DEVICE]\n';
+  r+=JSON.stringify(RESULTS.device,null,2)+'\n\n';
+  r+='[BRIDGE]\n';
+  r+=JSON.stringify(RESULTS.bridge,null,2)+'\n\n';
+  r+='[FILES]\n';
+  r+=JSON.stringify(RESULTS.files,null,2)+'\n\n';
+  r+='[IMAGE UPLOAD RESULTS]\n';
+  HOSTS.forEach(h=>{
+    const u=RESULTS.uploads.image[h.name];
+    if(u){r+=(u.ok?'✅':'❌')+' '+h.name+' | '+u.time+'ms | '+u.method+' | '+(u.url||u.error||u.raw||'null')+' | verify:'+(RESULTS.urlVerify[h.name+'_img']||'skip')+'\n';}
+    else{r+='⏭️ '+h.name+' | not tested\n';}
+  });
+  r+='\n[VIDEO UPLOAD RESULTS]\n';
+  HOSTS.forEach(h=>{
+    const u=RESULTS.uploads.video[h.name];
+    if(u){r+=(u.ok?'✅':'❌')+' '+h.name+' | '+u.time+'ms | '+u.method+' | '+(u.url||u.error||u.raw||'null')+' | verify:'+(RESULTS.urlVerify[h.name+'_vid']||'skip')+'\n';}
+    else{r+='⏭️ '+h.name+' | not tested\n';}
+  });
+  r+='\n[FREEPIK API TESTS]\n';
+  RESULTS.freepik.forEach((f,i)=>{
+    r+='Test '+(i+1)+': '+f.timestamp+' | '+f.method+' | HTTP '+f.status+' | '+f.latency+'ms | '+(f.error||f.response.substring(0,100))+'\n';
+  });
+  r+='\n[URL VERIFY]\n';
+  r+=JSON.stringify(RESULTS.urlVerify,null,2)+'\n';
+  r+='\n[RAW DATA]\n';
+  r+=JSON.stringify(RESULTS,null,2)+'\n';
+  document.getElementById('reportBox').textContent=r;
+}
+
+function copyReport(){
+  const txt=document.getElementById('reportBox').textContent;
+  if(navigator.clipboard){navigator.clipboard.writeText(txt).then(()=>alert('✅ Laporan dicopy!')).catch(()=>fallbackCopy(txt));}
+  else{fallbackCopy(txt);}
+}
+function fallbackCopy(txt){const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);alert('✅ Laporan dicopy!');}
+</script>
+</body>
+</html>
